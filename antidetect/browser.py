@@ -11,6 +11,7 @@ We hand it: the profile's persistent user-data dir, its proxy, its OS/locale, an
 """
 from __future__ import annotations
 
+import json
 import threading
 import traceback
 from typing import Any, Optional
@@ -98,6 +99,73 @@ def activate_bundled_engine() -> bool:
         return True
     except Exception:  # noqa: BLE001
         return False
+
+
+# Camoufox's distribution policy strips every search engine and installs a dummy
+# "None" engine pointing at http://127.0.0.1, so any address-bar search lands on
+# "Unable to connect". We patch the policy before each launch: a real default
+# engine, plus a few fingerprint/IP check sites as bookmarks.
+_SEARCH_ENGINE = {
+    "Name": "Google",
+    "Description": "Google Search",
+    "Alias": "@google",
+    "Method": "GET",
+    "URLTemplate": "https://www.google.com/search?q={searchTerms}",
+    "SuggestURLTemplate": "https://www.google.com/complete/search?client=firefox&q={searchTerms}",
+    "IconURL": "https://www.google.com/favicon.ico",
+}
+
+_TOOLBAR_BOOKMARKS = [
+    ("BrowserLeaks IP", "https://browserleaks.com/ip"),
+    ("IPLeak", "https://ipleak.net/"),
+    ("Pixelscan", "https://pixelscan.net/"),
+    ("BrowserScan", "https://www.browserscan.net/"),
+    ("CreepJS", "https://abrahamjuliot.github.io/creepjs/"),
+]
+
+
+def _patch_policies(policies: dict) -> None:
+    engines = policies.setdefault("SearchEngines", {})
+    engines["Remove"] = [n for n in engines.get("Remove", []) if n != "Google"]
+    engines["Add"] = [e for e in engines.get("Add", []) if e.get("Name") not in ("None", "Google")]
+    engines["Add"].insert(0, _SEARCH_ENGINE)
+    engines["Default"] = _SEARCH_ENGINE["Name"]
+
+    # Camoufox keeps the toolbar strip at stock height (86 px, see its
+    # coherence.BROWSER_CHROME_HEIGHT) by parking bookmarks in the nav-bar; a
+    # separate bookmarks row would make the window geometry inconsistent.
+    policies["Bookmarks"] = [
+        {"Title": title, "URL": url, "Placement": "toolbar"} for title, url in _TOOLBAR_BOOKMARKS
+    ]
+
+
+def ensure_browser_policies() -> None:
+    """Patch the policies.json of every installed/bundled Camoufox build."""
+    roots = []
+    try:
+        from camoufox.pkgman import INSTALL_DIR
+
+        roots.append(INSTALL_DIR)
+    except Exception:  # noqa: BLE001
+        pass
+    bundle = config.bundled_browser_dir()
+    if bundle:
+        roots.append(bundle)
+    for root in roots:
+        try:
+            files = list(root.rglob("distribution/policies.json"))
+        except Exception:  # noqa: BLE001
+            continue
+        for f in files:
+            try:
+                text = f.read_text(encoding="utf-8")
+                data = json.loads(text)
+                _patch_policies(data.setdefault("policies", {}))
+                patched = json.dumps(data, indent=2)
+                if patched != text:
+                    f.write_text(patched, encoding="utf-8")
+            except Exception:  # noqa: BLE001 - never block a launch over this
+                pass
 
 
 def _resolve_screen(os_name: str, width: int, height: int):
@@ -207,6 +275,7 @@ def build_launch_options(profile: Profile, headless: bool | None = None) -> dict
     bundled_exe = config.bundled_browser_exe()
     if bundled_exe:
         opts["executable_path"] = bundled_exe  # use the shipped browser, never download
+    opts["firefox_user_prefs"] = {}
     webgl = fp.webgl_config()
     if webgl is not None:
         opts["webgl_config"] = webgl  # pins GPU consistently across launches
@@ -228,7 +297,7 @@ def build_launch_options(profile: Profile, headless: bool | None = None) -> dict
         # `pointer: coarse` and `hover: none` all report like a touchscreen) and
         # honour the meta-viewport tag so pages render their true mobile layout.
         # Without these a phone UA still gets served/rendered as desktop.
-        opts["firefox_user_prefs"] = {
+        opts["firefox_user_prefs"].update({
             "dom.w3c_touch_events.enabled": 1,
             "dom.w3c_touch_events.legacy_apis.enabled": True,
             "dom.meta-viewport.enabled": True,
@@ -238,7 +307,7 @@ def build_launch_options(profile: Profile, headless: bool | None = None) -> dict
             # `any-hover: none` true — the media queries mobile sites switch on.
             "ui.primaryPointerCapabilities": 1,
             "ui.allPointerCapabilities": 1,
-        }
+        })
     else:
         screen = _resolve_screen(fp.os, fp.screen_width, fp.screen_height)
         if screen is not None:
@@ -454,6 +523,215 @@ def build_chromium_options(profile: Profile, pw) -> dict[str, Any]:
     return opts
 
 
+def _is_blank(url: str) -> bool:
+    return url in ("", "about:blank", "about:home", "about:newtab")
+
+
+class _OpenTabs:
+    """Remember a profile's open tabs so the next launch reopens them.
+
+    Firefox's own session restore can't be used: enabling it (browser.startup.page
+    = 3 and friends) hangs Playwright's launch handshake. So the session records
+    the open tab URLs itself, about once a second, in the profile folder.
+    """
+
+    FILE = "manyfaces_tabs.json"
+
+    def __init__(self, data_dir) -> None:
+        from pathlib import Path
+
+        self.path = Path(data_dir) / self.FILE
+        self._last: Optional[list[str]] = None
+
+    def load(self) -> list[str]:
+        try:
+            urls = json.loads(self.path.read_text(encoding="utf-8"))
+            return [u for u in urls if isinstance(u, str) and not _is_blank(u)]
+        except (OSError, ValueError):
+            return []
+
+    def save(self, context) -> None:
+        try:
+            urls = [p.url for p in context.pages if not _is_blank(p.url)]
+        except Exception:  # noqa: BLE001 - context closing
+            return
+        if not urls or urls == self._last:
+            return  # keep the last real snapshot when the window empties out
+        try:
+            self.path.write_text(json.dumps(urls), encoding="utf-8")
+            self._last = urls
+        except OSError:
+            pass
+
+    def launch_args(self) -> list[str]:
+        """Saved tabs as browser command-line URLs, so they open as tabs of the one
+        window (Playwright's new_page() would give each its own window).
+
+        Playwright puts these right after `-juggler-pipe`, which swallows the next
+        argument, so a throwaway about:blank goes first.
+        """
+        urls = self.load()
+        return ["about:blank", *urls] if urls else []
+
+    def settle(self, context, first_page, fallback_url: str, reopened: bool) -> None:
+        """After launch: drop the leftover blank tabs, or open the start URL."""
+        if not reopened:
+            try:
+                first_page.goto(fallback_url, wait_until="domcontentloaded")
+            except Exception:  # noqa: BLE001 - navigation failure shouldn't close the window
+                pass
+            return
+        # Reopened tabs read about:blank until their navigation commits; wait for
+        # them so a still-loading tab isn't mistaken for a leftover blank one.
+        expected = len(self.load())
+        for _ in range(40):
+            try:
+                if sum(not _is_blank(p.url) for p in context.pages) >= expected:
+                    break
+                first_page.wait_for_timeout(250)
+            except Exception:  # noqa: BLE001
+                break
+        else:
+            return  # some never loaded; leave every tab alone rather than guess
+        for page in list(context.pages):
+            if len(context.pages) > 1 and _is_blank(page.url):
+                try:
+                    page.close()
+                except Exception:  # noqa: BLE001
+                    pass
+
+    def reopen(self, context, first_page, fallback_url: str) -> None:
+        """Open the saved tabs, or `fallback_url` when there are none."""
+        urls = self.load() or [fallback_url]
+        for i, url in enumerate(urls):
+            try:
+                page = first_page if i == 0 else context.new_page()
+                page.goto(url, wait_until="commit")
+            except Exception:  # noqa: BLE001 - one bad tab shouldn't stop the rest
+                pass
+
+
+class _WindowTitle:
+    """Prefix a profile's browser window titles with the profile name ("[name] ...").
+
+    Done from outside through the OS (Windows only), not by touching
+    document.title, so pages can't see it. The browser rewrites its title on
+    every navigation, so `tick()` re-applies the prefix; it's called about once
+    a second while the session is open.
+    """
+
+    _CLASSES = ("MozillaWindowClass", "Chrome_WidgetWin_1")
+
+    def __init__(self, name: str, data_dir) -> None:
+        import os
+        import sys
+
+        self.enabled = sys.platform == "win32" and bool(name.strip())
+        self.prefix = f"[{name.strip()}] "
+        self.data_dir = os.path.normcase(str(data_dir))
+        self.pids: set[int] = set()
+        self._next_scan = 0.0
+
+    def _scan(self) -> None:
+        import os
+
+        import psutil
+
+        roots = []
+        for proc in psutil.process_iter(["cmdline"]):
+            try:
+                cmd = os.path.normcase(" ".join(proc.info["cmdline"] or []))
+            except Exception:  # noqa: BLE001
+                continue
+            if self.data_dir in cmd:
+                roots.append(proc)
+        pids = set()
+        for proc in roots:
+            pids.add(proc.pid)
+            try:
+                pids.update(c.pid for c in proc.children(recursive=True))
+            except Exception:  # noqa: BLE001
+                pass
+        self.pids = pids
+
+    def tick(self) -> None:
+        if not self.enabled:
+            return
+        import ctypes
+        import time
+        from ctypes import wintypes
+
+        try:
+            now = time.monotonic()
+            if now >= self._next_scan:
+                self._scan()
+                # Retry quickly until the browser shows up, then rarely.
+                self._next_scan = now + (10.0 if self.pids else 1.0)
+            if not self.pids:
+                return
+
+            user32 = ctypes.windll.user32
+            found = []
+
+            @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+            def collect(hwnd, _):
+                pid = wintypes.DWORD()
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                if pid.value in self.pids and user32.IsWindowVisible(hwnd):
+                    found.append(hwnd)
+                return True
+
+            user32.EnumWindows(collect, 0)
+            for hwnd in found:
+                cls = ctypes.create_unicode_buffer(64)
+                user32.GetClassNameW(hwnd, cls, 64)
+                if cls.value not in self._CLASSES:
+                    continue
+                length = user32.GetWindowTextLengthW(hwnd)
+                if not length:
+                    continue
+                buf = ctypes.create_unicode_buffer(length + 1)
+                user32.GetWindowTextW(hwnd, buf, length + 1)
+                if not buf.value.startswith(self.prefix):
+                    user32.SetWindowTextW(hwnd, self.prefix + buf.value)
+        except Exception:  # noqa: BLE001 - cosmetic; never break a session over it
+            pass
+
+
+def _wait_until_closed(
+    context,
+    stop: threading.Event,
+    title: Optional[_WindowTitle] = None,
+    tabs: Optional[_OpenTabs] = None,
+) -> None:
+    """Block until stop() is called or the user closes the browser window.
+
+    Waiting on the context's "close" event (in 1 s slices) keeps Playwright's event
+    loop pumping. A plain sleep doesn't: the window-closed events then never get
+    processed, `context.pages` stays stale forever, and the profile looks "running"
+    after its window is gone — so it can't be launched again.
+    """
+    from playwright.sync_api import TimeoutError as PlaywrightTimeout
+
+    while not stop.is_set():
+        if title is not None:
+            title.tick()
+        if tabs is not None:
+            tabs.save(context)
+        try:
+            context.wait_for_event("close", timeout=1000)
+            return  # context closed (window closed / browser exited)
+        except PlaywrightTimeout:
+            pass
+        except Exception:  # noqa: BLE001 - context already gone
+            return
+        try:
+            if not context.pages:
+                return  # user closed the last tab/window
+        except Exception:  # noqa: BLE001
+            return
+
+
 class BrowserSession:
     def __init__(self, profile: Profile) -> None:
         self.profile = profile
@@ -514,7 +792,12 @@ class BrowserSession:
             )
             self._ready.set()
             return
+        ensure_browser_policies()
         opts = build_launch_options(self.profile)
+        reopen_args = _OpenTabs(opts["user_data_dir"]).launch_args()
+        self._reopened = bool(reopen_args)
+        if reopen_args:
+            opts["args"] = [*opts.get("args", []), *reopen_args]
         self._launch(Camoufox, opts)
 
     def _run_chromium(self) -> None:
@@ -558,20 +841,11 @@ class BrowserSession:
                     pass
 
             page = context.pages[0] if context.pages else context.new_page()
-            try:
-                page.goto(effective_start_url(self.profile, fp), wait_until="domcontentloaded")
-            except Exception:  # noqa: BLE001 - navigation failure shouldn't close the window
-                pass
+            tabs = _OpenTabs(opts["user_data_dir"])
+            tabs.reopen(context, page, effective_start_url(self.profile, fp))
 
             self._ready.set()
-            while not self._stop.is_set():
-                if self._stop.wait(timeout=1.0):
-                    break
-                try:
-                    if not context.pages:
-                        break  # user closed the last tab/window
-                except Exception:  # noqa: BLE001 - context already gone
-                    break
+            _wait_until_closed(context, self._stop, _WindowTitle(self.profile.name, opts["user_data_dir"]), tabs)
             try:
                 context.close()
             except Exception:  # noqa: BLE001
@@ -588,25 +862,12 @@ class BrowserSession:
                     pass
 
             page = browser.pages[0] if getattr(browser, "pages", None) else browser.new_page()
-            try:
-                fp = self.profile.fingerprint.to_fingerprint()
-                page.goto(effective_start_url(self.profile, fp), wait_until="domcontentloaded")
-            except Exception:  # noqa: BLE001 - navigation failure shouldn't close the window
-                pass
+            tabs = _OpenTabs(opts["user_data_dir"])
+            fp = self.profile.fingerprint.to_fingerprint()
+            tabs.settle(browser, page, effective_start_url(self.profile, fp), reopened=getattr(self, "_reopened", False))
 
             self._ready.set()
-            # Block until stop() is called or the user closes the window.
-            while not self._stop.is_set():
-                if self._stop.wait(timeout=1.0):
-                    break
-                # Once the user closes the last window, the context tears down:
-                # `pages` may return [] or, once the process is gone, raise. Either
-                # way it means "closed" — treat both as a clean exit, not an error.
-                try:
-                    if not browser.pages:
-                        break  # user closed the last tab/window
-                except Exception:  # noqa: BLE001 - context already gone
-                    break
+            _wait_until_closed(browser, self._stop, _WindowTitle(self.profile.name, opts["user_data_dir"]), tabs)
 
 
 class SessionManager:

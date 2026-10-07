@@ -16,3 +16,6 @@ browserforge>=1.2.0
 # depend on it directly since it's a first-class engine here. For the Chromium
 # profiles, install the browser once:  python -m playwright install chromium
 playwright>=1.40
+
+# Process lookup (window titles show the profile name)
+psutil>=5.9
