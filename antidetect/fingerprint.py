@@ -18,12 +18,12 @@ _OS_SHORT = {"windows": "win", "macos": "mac", "linux": "lin"}
 # Fallback WebGL pairs (only used if Camoufox's own GPU database isn't importable).
 _WEBGL_FALLBACK = {
     "windows": [
-        ("Google Inc. (NVIDIA)", "ANGLE (NVIDIA, NVIDIA GeForce GTX 980 Direct3D11 vs_5_0 ps_5_0)"),
-        ("Google Inc. (Intel)", "ANGLE (Intel, Intel(R) HD Graphics Direct3D11 vs_5_0 ps_5_0)"),
-        ("Google Inc. (AMD)", "ANGLE (AMD, Radeon R9 200 Series Direct3D11 vs_5_0 ps_5_0)"),
+        ("Google Inc. (NVIDIA)", "ANGLE (NVIDIA, NVIDIA GeForce GTX 980 Direct3D11 vs_5_0 ps_5_0), or similar"),
+        ("Google Inc. (Intel)", "ANGLE (Intel, Intel(R) HD Graphics Direct3D11 vs_5_0 ps_5_0), or similar"),
+        ("Google Inc. (AMD)", "ANGLE (AMD, Radeon R9 200 Series Direct3D11 vs_5_0 ps_5_0), or similar"),
     ],
-    "macos": [("Apple", "Apple M1")],
-    "linux": [("Intel", "Mesa Intel(R) UHD Graphics 620 (KBL GT2)")],
+    "macos": [("Apple", "Apple M1, or similar")],
+    "linux": [("Intel", "Intel(R) HD Graphics, or similar")],
 }
 
 # Common desktop resolutions (width, height).
@@ -33,17 +33,9 @@ _SCREENS = [
 ]
 
 # (language, region, timezone) that hang together geographically.
+# Default: Brazilian Portuguese only. Add tuples here to mix other locales back in.
 _LOCALES = [
-    ("en-US", "US", "America/New_York"),
-    ("en-US", "US", "America/Chicago"),
-    ("en-US", "US", "America/Los_Angeles"),
-    ("en-GB", "GB", "Europe/London"),
-    ("de-DE", "DE", "Europe/Berlin"),
-    ("fr-FR", "FR", "Europe/Paris"),
-    ("es-ES", "ES", "Europe/Madrid"),
     ("pt-BR", "BR", "America/Sao_Paulo"),
-    ("nl-NL", "NL", "Europe/Amsterdam"),
-    ("en-CA", "CA", "America/Toronto"),
 ]
 
 _CORES = [4, 6, 8, 8, 12, 16]
@@ -126,7 +118,7 @@ def _firefox_major() -> str:
         return "135"
 
 
-def _sample_webgl(os_name: str, rng) -> tuple[str, str]:
+def _sample_webgl(os_name: str, rng, width: int, height: int, cores: int) -> tuple[str, str]:
     """Return a valid (vendor, renderer) pair for this OS.
 
     Prefers Camoufox's own real-GPU database (guaranteed accepted by `webgl_config`);
@@ -135,9 +127,12 @@ def _sample_webgl(os_name: str, rng) -> tuple[str, str]:
     never crash on this.
     """
     try:
-        from camoufox.webgl import sample_webgl
+        from camoufox.webgl import sample_webgl_for_screen
 
-        data = sample_webgl(_OS_SHORT.get(os_name, "win"))
+        data = sample_webgl_for_screen(
+            _OS_SHORT.get(os_name, "win"), width, height,
+            seed=rng.randrange(2**31), cores=cores,
+        )
         vendor, renderer = data.get("webGl:vendor", ""), data.get("webGl:renderer", "")
         if vendor and renderer:
             return vendor, renderer
@@ -298,7 +293,15 @@ class Fingerprint:
         if self.is_mobile:
             return None
         if self.webgl_vendor and self.webgl_renderer:
-            return (self.webgl_vendor, self.webgl_renderer)
+            pair = (self.webgl_vendor, self.webgl_renderer)
+            try:
+                from camoufox.webgl import firefox_gpus
+
+                if pair not in firefox_gpus(_OS_SHORT.get(self.os, "win")):
+                    return None
+            except Exception:  # noqa: BLE001 - can't validate; pass it through
+                pass
+            return pair
         return None
 
 
@@ -442,10 +445,10 @@ def _generate_ios(rng, device=None) -> Fingerprint:
     )
 
 
-# Weighted pool for "Random": mostly desktop, with a realistic minority of phones.
+# Weighted pool for "Random": desktop only. Phones are created explicitly (New Phone).
 # iOS is intentionally excluded — it's the weaker spoof (Gecko under an iOS UA), so
 # it's only ever produced when a user explicitly asks for it, never by the random mix.
-_RANDOM_OS_POOL = ["windows", "windows", "macos", "linux", "android", "android"]
+_RANDOM_OS_POOL = ["windows", "windows", "macos", "linux"]
 
 
 def generate(
@@ -453,9 +456,8 @@ def generate(
 ) -> Fingerprint:
     """Generate a fresh, internally-coherent, deeply-randomized fingerprint.
 
-    With no `os_name`, one is drawn from `_RANDOM_OS_POOL`, which now includes
-    Android — so bulk/random creation yields a natural mix of desktop and phone
-    profiles. Pass `device` (a preset name from `list_mobile_devices()`) to pin a
+    With no `os_name`, one is drawn from `_RANDOM_OS_POOL` (desktop only), so
+    bulk/random creation always yields desktop profiles. Pass `device` (a preset name from `list_mobile_devices()`) to pin a
     specific phone model; it overrides `os_name`.
     """
     rng = random.Random(seed) if seed else random
@@ -473,8 +475,9 @@ def generate(
         return _generate_android(rng)
     os_name = os_name if os_name in _OS_SHORT else rng.choice(_OS_CHOICES)
 
-    vendor, renderer = _sample_webgl(os_name, rng)
     w, h = rng.choice(_SCREENS)
+    cores = rng.choice(_CORES)
+    vendor, renderer = _sample_webgl(os_name, rng, w, h, cores)
     lang, region, tz = rng.choice(_LOCALES)
 
     # Laptops carry a battery that discharges; desktops report charging & full.
@@ -493,7 +496,7 @@ def generate(
         screen_height=h,
         webgl_vendor=vendor,
         webgl_renderer=renderer,
-        hardware_concurrency=rng.choice(_CORES),
+        hardware_concurrency=cores,
         device_memory=rng.choice([4, 8, 8, 16, 16, 32]),
         language=lang,
         region=region,
