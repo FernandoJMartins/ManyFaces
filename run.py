@@ -9,11 +9,18 @@ never collide with a leftover instance.
 """
 from __future__ import annotations
 
+import os
 import socket
 import sys
 import threading
 import time
 import webbrowser
+
+# Pythons with a ._pth file (embeddable-style installs) run in isolated mode and
+# don't put the script's folder on sys.path, so `antidetect` wouldn't be found.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
 
 import uvicorn
 
