@@ -24,24 +24,44 @@ function esc(s) {
   return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 }
 
-const OS_ICON = { windows: "🪟", macos: "🍎", linux: "🐧", android: "📱", ios: "🍏" };
+const ICONS = {
+  play: '<polygon points="6 3 20 12 6 21 6 3"/>',
+  stop: '<rect x="5" y="5" width="14" height="14" rx="2"/>',
+  shuffle: '<path d="m18 14 4 4-4 4"/><path d="m18 2 4 4-4 4"/><path d="M2 18h1.97a4 4 0 0 0 3.3-1.7l5.46-8.6a4 4 0 0 1 3.3-1.7H22"/><path d="M2 6h1.97a4 4 0 0 1 3.3 1.7l.53.83"/><path d="M22 18h-6.04a4 4 0 0 1-3.3-1.7l-.53-.83"/>',
+  trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  phone: '<rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/>',
+  layers: '<path d="m12 2 10 5-10 5L2 7l10-5z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+  more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+  copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+  cookie: '<path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"/><path d="M8.5 8.5v.01"/><path d="M16 15.5v.01"/><path d="M12 12v.01"/><path d="M11 17v.01"/><path d="M7 14v.01"/>',
+};
+function icon(name, cls = "") {
+  return `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ""}</svg>`;
+}
+function hydrateIcons(rootEl = document) {
+  rootEl.querySelectorAll("i[data-icon]").forEach((el) => { el.outerHTML = icon(el.dataset.icon, el.className); });
+}
+hydrateIcons();
 
 function engineBadge(engine) {
   const meta = {
-    chromium: { cls: "chromium", label: "🌐 Chromium", title: "Chromium engine" },
-    android: { cls: "android", label: "🤖 Android", title: "Real Android device (AVD emulator)" },
-  }[engine] || { cls: "camoufox", label: "🦊 Camoufox", title: "Camoufox (Firefox) engine" };
+    chromium: { cls: "chromium", label: "Chromium", title: "Chromium engine" },
+    android: { cls: "android", label: "Android", title: "Real Android device (AVD emulator)" },
+  }[engine] || { cls: "camoufox", label: "Camoufox", title: "Camoufox (Firefox) engine" };
   return `<span class="badge engine ${meta.cls}" title="${meta.title}">${meta.label}</span>`;
 }
 
 // ------------------------------------------------------------- render list ---
 function deviceCell(fp) {
   if (fp.is_mobile) {
-    const icon = fp.os === "ios" ? "🍏" : "📱";
-    return `<span class="badge device mobile">${icon} ${esc(fp.device_name || "Phone")}</span>`;
+    return `<span class="badge device mobile">${esc(fp.device_name || "Phone")}</span>`;
   }
   const label = { windows: "Windows", macos: "macOS", linux: "Linux" }[fp.os] || fp.os;
-  return `<span class="badge device">${OS_ICON[fp.os] || "💻"} ${esc(label)}</span>`;
+  return `<span class="badge device">${esc(label)}</span>`;
 }
 
 function proxyCell(p) {
@@ -65,7 +85,7 @@ function statusPill(p) {
   const st = p.status || (p.running ? "running" : "stopped");
   if (st === "launching") return `<span class="pill launching"><span class="spin"></span>starting…</span>`;
   if (st === "running") return `<span class="pill on"><span class="dot"></span>running</span>`;
-  if (st === "error") return `<span class="pill err" data-err="${p.id}" title="Click for details">⚠ failed</span>`;
+  if (st === "error") return `<span class="pill err" data-err="${p.id}" title="Click for details">failed</span>`;
   return `<span class="pill off"><span class="dot"></span>stopped</span>`;
 }
 
@@ -85,8 +105,8 @@ function renderList(profiles) {
   if (!profiles.length) {
     const msg = allProfiles.length
       ? `No profiles match. <a href="#" id="clear-filter">Clear filters</a>`
-      : `No profiles yet. Click “+ New Profile” or “📱 New Phone”.`;
-    body.innerHTML = `<tr><td colspan="9" class="empty">${msg}</td></tr>`;
+      : `No profiles yet. Click “New profile” or “New phone”.`;
+    body.innerHTML = `<tr><td colspan="8" class="empty">${msg}</td></tr>`;
     const cf = $("#clear-filter");
     if (cf) cf.onclick = (e) => { e.preventDefault(); activeFilter = "all"; $("#search").value = ""; renderStats(); applySearch(); };
     syncBulkBar();
@@ -98,23 +118,20 @@ function renderList(profiles) {
     if (p.launch_error) launchErrors[p.id] = p.launch_error; else if (p.status !== "error") delete launchErrors[p.id];
     const st = p.status || (p.running ? "running" : "stopped");
     const toggle = (st === "running" || st === "launching")
-      ? `<button class="sm" data-act="stop" data-id="${p.id}">Stop</button>`
-      : `<button class="sm primary" data-act="start" data-id="${p.id}">Launch</button>`;
+      ? `<button class="sm" data-act="stop" data-id="${p.id}">${icon("stop")}Stop</button>`
+      : `<button class="sm primary" data-act="start" data-id="${p.id}">${icon("play")}Launch</button>`;
     return `<tr class="${sel ? "sel" : ""}">
       <td class="col-check"><input type="checkbox" class="row-check" data-id="${p.id}" ${sel ? "checked" : ""} /></td>
       <td><div class="name" title="${esc(p.name)}">${esc(p.name)}</div><div class="sub">${fp.screen_width}×${fp.screen_height}</div></td>
       <td>${deviceCell(fp)}<div class="sub">${engineBadge(p.engine)}</div></td>
       <td>${proxyCell(p)}</td>
       <td class="hide-sm sub">${esc(fp.language)} · ${esc(fp.timezone)}</td>
-      <td class="hide-sm"><button class="sm ghost" data-act="cookies" data-id="${p.id}">Cookies</button></td>
       <td>${accountSelect(p)}</td>
       <td>${statusPill(p)}</td>
       <td class="actions-cell"><div class="actions">
         ${toggle}
-        <button class="sm" data-act="randomize" data-id="${p.id}" title="Regenerate fingerprint + fresh cookie jar">🎲</button>
-        <button class="sm" data-act="edit" data-id="${p.id}">Edit</button>
-        <button class="sm" data-act="clone" data-id="${p.id}">Clone</button>
-        <button class="sm danger" data-act="delete" data-id="${p.id}">Delete</button>
+        <button class="sm" data-act="edit" data-id="${p.id}">${icon("edit")}Edit</button>
+        <button class="sm icon-only" data-menu="${p.id}" title="More actions">${icon("more")}</button>
       </div></td>
     </tr>`;
   }).join("");
@@ -144,9 +161,9 @@ function renderStats() {
     <div class="stat"><div class="stat-n">${total}</div><div class="stat-l">Profiles</div></div>
     <div class="stat"><div class="stat-n on">${running}</div><div class="stat-l">Running</div></div>
     <div class="stat wide"><div class="stat-engines">${Object.entries(byEngine).map(([e, n]) => `${engineBadge(e)}&nbsp;${n}`).join(" &nbsp; ") || "—"}</div><div class="stat-l">By engine</div></div>`;
-  const chips = [["all", "All", total], ["running", "● Running", running],
-    ["android", "🤖 Android", byEngine.android || 0], ["chromium", "🌐 Chromium", byEngine.chromium || 0],
-    ["camoufox", "🦊 Camoufox", byEngine.camoufox || 0],
+  const chips = [["all", "All", total], ["running", "Running", running],
+    ["android", "Android", byEngine.android || 0], ["chromium", "Chromium", byEngine.chromium || 0],
+    ["camoufox", "Camoufox", byEngine.camoufox || 0],
     ...ACCOUNT_STATUSES.map(([v, label]) => [`acct:${v}`, label, allProfiles.filter((p) => (p.account_status || "active") === v).length])];
   $("#filter-chips").innerHTML = chips
     .filter((c) => c[0] === "all" || c[0] === "running" || c[2] > 0)
@@ -155,12 +172,11 @@ function renderStats() {
 
 function syncBulkBar() {
   const n = selected.size;
-  $("#bulk-bar").classList.toggle("hidden", n === 0);
-  $("#bulk-count").textContent = `${n} selected`;
+  $("#sel-bar").classList.toggle("hidden", n === 0);
+  $("#sel-count").textContent = `${n} selected`;
   const view = currentView();
   const allSel = view.length > 0 && view.every((p) => selected.has(p.id));
   $("#head-check").checked = allSel;
-  $("#bulk-master").checked = allSel;
 }
 
 function toggleSelectAll(on) {
@@ -185,7 +201,6 @@ async function loadProfiles() {
 
 $("#search").addEventListener("input", applySearch);
 $("#head-check").addEventListener("change", (e) => toggleSelectAll(e.target.checked));
-$("#bulk-master").addEventListener("change", (e) => toggleSelectAll(e.target.checked));
 $("#filter-chips").addEventListener("click", (e) => {
   const b = e.target.closest("[data-filter]"); if (!b) return;
   activeFilter = b.dataset.filter; renderStats(); applySearch();
@@ -213,7 +228,7 @@ $("#profiles-body").addEventListener("change", (e) => {
   cb.closest("tr").classList.toggle("sel", cb.checked);
   syncBulkBar();
 });
-$("#bulk-bar").addEventListener("click", async (e) => {
+$("#sel-bar").addEventListener("click", async (e) => {
   const b = e.target.closest("[data-bulk]"); if (!b) return;
   const act = b.dataset.bulk;
   if (act === "clear") { selected.clear(); applySearch(); return; }
@@ -221,7 +236,7 @@ $("#bulk-bar").addEventListener("click", async (e) => {
   if (!ids.length) return;
   if (act === "delete" && !confirm(`Delete ${ids.length} profile(s) and all their data?`)) return;
   if (act === "randomize" && !confirm(`Regenerate fingerprint + cookies for ${ids.length} profile(s)?`)) return;
-  b.disabled = true; const lbl = b.textContent; b.textContent = "…";
+  b.disabled = true;
   let ok = 0, fail = 0;
   for (const id of ids) {
     try {
@@ -232,19 +247,50 @@ $("#bulk-bar").addEventListener("click", async (e) => {
       ok++;
     } catch (_) { fail++; }
   }
-  b.disabled = false; b.textContent = lbl;
+  b.disabled = false;
   toast(`${act}: ${ok} done${fail ? `, ${fail} failed` : ""}`, fail ? "err" : "ok");
   loadProfiles();
 });
 
+// ---------------------------------------------------------------- row menu ---
+const rowMenu = document.createElement("div");
+rowMenu.className = "row-menu hidden";
+document.body.appendChild(rowMenu);
+
+function closeRowMenu() { rowMenu.classList.add("hidden"); rowMenu.dataset.for = ""; }
+
+$("#profiles-body").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-menu]");
+  if (!btn) return;
+  e.stopPropagation();
+  const id = btn.dataset.menu;
+  if (rowMenu.dataset.for === id) return closeRowMenu();
+  rowMenu.innerHTML = `
+    <button data-act="randomize" data-id="${id}">${icon("shuffle")}Randomize fingerprint</button>
+    <button data-act="clone" data-id="${id}">${icon("copy")}Clone</button>
+    <button data-act="cookies" data-id="${id}">${icon("cookie")}Cookies</button>
+    <div class="sep"></div>
+    <button data-act="delete" data-id="${id}" class="danger">${icon("trash")}Delete</button>`;
+  rowMenu.dataset.for = id;
+  rowMenu.classList.remove("hidden");
+  const r = btn.getBoundingClientRect();
+  const w = rowMenu.offsetWidth, h = rowMenu.offsetHeight;
+  rowMenu.style.left = `${Math.max(8, r.right - w)}px`;
+  rowMenu.style.top = `${r.bottom + 6 + h > innerHeight ? r.top - h - 6 : r.bottom + 6}px`;
+});
+document.addEventListener("click", (e) => { if (!rowMenu.contains(e.target)) closeRowMenu(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeRowMenu(); });
+window.addEventListener("scroll", closeRowMenu, true);
+
 // -------------------------------------------------------------- row actions ---
-$("#profiles-body").addEventListener("click", async (e) => {
+async function onRowAction(e) {
   const btn = e.target.closest("button[data-act]");
   if (!btn) return;
+  closeRowMenu();
   const { act, id } = btn.dataset;
   try {
     if (act === "start") {
-      btn.textContent = "Starting…"; btn.disabled = true;
+      btn.disabled = true;
       delete launchErrors[id];
       const r = await api(`/api/profiles/${id}/start`, { method: "POST" });
       toast(r.proxy ? `Launching · ${r.proxy}` : "Launching…");
@@ -279,7 +325,9 @@ $("#profiles-body").addEventListener("click", async (e) => {
     }
     loadProfiles();
   }
-});
+}
+$("#profiles-body").addEventListener("click", onRowAction);
+rowMenu.addEventListener("click", onRowAction);
 
 // Live status: while any profile is launching, refresh so pills update on their own.
 let pollTimer = null;
@@ -386,7 +434,7 @@ function renderFpPreview(fp) {
   if (!fp) { box.textContent = "A coherent, deeply-randomized fingerprint is generated on save."; return; }
   box.textContent =
     `Fingerprint (pinned natively by Camoufox, identical every launch)\n` +
-    `  OS:        ${fp.os}${fp.is_mobile ? " · 📱 " + (fp.device_name || "phone") : ""}\n` +
+    `  OS:        ${fp.os}${fp.is_mobile ? " · " + (fp.device_name || "phone") : ""}\n` +
     (fp.is_mobile ? `  UA:        ${fp.user_agent}\n` : "") +
     `  Screen:    ${fp.screen_width}×${fp.screen_height} · ${fp.color_depth}-bit · DPR ${fp.device_pixel_ratio}\n` +
     `  GPU:       ${fp.webgl_renderer}\n` +
@@ -645,7 +693,7 @@ async function loadDevices() {
   return deviceCatalog;
 }
 
-function osLabel(os) { return os === "ios" ? "🍏 iPhone" : "📱 Android"; }
+function osLabel(os) { return os === "ios" ? "iPhone" : "Android"; }
 
 function fillPhoneDevices() {
   const sel = $("#phone-device");

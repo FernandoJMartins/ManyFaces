@@ -15,10 +15,19 @@
         <span>Anti-detect browser manager</span>
       </div>
     </div>
+    <!-- Actions on the selected profiles; shown while anything is selected -->
+    <div id="sel-bar" class="sel-bar hidden">
+      <span id="sel-count" class="sel-count">0 selected</span>
+      <button data-bulk="launch" class="primary"><i data-icon="play"></i>Launch</button>
+      <button data-bulk="stop"><i data-icon="stop"></i>Stop</button>
+      <button data-bulk="randomize"><i data-icon="shuffle"></i>Randomize</button>
+      <button data-bulk="delete" class="danger"><i data-icon="trash"></i>Delete</button>
+      <button data-bulk="clear" class="ghost" title="Clear selection"><i data-icon="x"></i></button>
+    </div>
     <div class="header-actions">
-      <button id="bulk-btn" class="ghost">⚙ Bulk create</button>
-      <button id="phone-btn" class="ghost">📱 New Phone</button>
-      <button id="new-btn" class="primary">+ New Profile</button>
+      <button id="bulk-btn" class="ghost"><i data-icon="layers"></i>Bulk create</button>
+      <button id="phone-btn" class="ghost"><i data-icon="phone"></i>New phone</button>
+      <button id="new-btn" class="primary"><i data-icon="plus"></i>New profile</button>
     </div>
   </header>
 
@@ -31,20 +40,8 @@
         <div class="chips" id="filter-chips"></div>
       </div>
       <div class="search-wrap">
-        <span class="search-ic">🔍</span>
+        <i class="search-ic" data-icon="search"></i>
         <input id="search" class="search" type="text" placeholder="Search profiles…" />
-      </div>
-    </div>
-
-    <!-- Bulk-action bar: appears when one or more rows are selected -->
-    <div id="bulk-bar" class="bulk-bar hidden">
-      <label class="sel-all"><input type="checkbox" id="bulk-master" /> <span id="bulk-count">0 selected</span></label>
-      <div class="bulk-actions">
-        <button data-bulk="launch" class="sm primary">▶ Launch</button>
-        <button data-bulk="stop" class="sm">■ Stop</button>
-        <button data-bulk="randomize" class="sm">🎲 Randomize</button>
-        <button data-bulk="delete" class="sm danger">🗑 Delete</button>
-        <button data-bulk="clear" class="sm ghost">Clear</button>
       </div>
     </div>
 
@@ -54,12 +51,12 @@
           <tr>
             <th class="col-check"><input type="checkbox" id="head-check" title="Select all" /></th>
             <th>Name</th><th>Device</th><th>Proxy</th>
-            <th class="hide-sm">Locale</th><th class="hide-sm">Cookies</th>
+            <th class="hide-sm">Locale</th>
             <th>Account</th><th>Status</th><th></th>
           </tr>
         </thead>
         <tbody id="profiles-body">
-          <tr><td colspan="9" class="empty">Loading…</td></tr>
+          <tr><td colspan="8" class="empty">Loading…</td></tr>
         </tbody>
       </table>
     </div>
@@ -82,11 +79,11 @@
             <label>Device / operating system</label>
             <select id="f-os">
               <option value="">Random (mostly desktop)</option>
-              <option value="windows">🪟 Windows</option>
-              <option value="macos">🍎 macOS</option>
-              <option value="linux">🐧 Linux</option>
-              <option value="android">📱 Android phone</option>
-              <option value="ios">🍏 iPhone (iOS)</option>
+              <option value="windows">Windows</option>
+              <option value="macos">macOS</option>
+              <option value="linux">Linux</option>
+              <option value="android">Android phone</option>
+              <option value="ios">iPhone (iOS)</option>
             </select>
           </div>
         </div>
@@ -98,9 +95,9 @@
           <div class="field">
             <label>Browser engine</label>
             <select id="f-engine">
-              <option value="camoufox">🦊 Camoufox — max stealth (Firefox)</option>
-              <option value="chromium">🌐 Chromium — compatibility + real phone UI</option>
-              <option value="android">🤖 Android — real device (AVD emulator)</option>
+              <option value="camoufox">Camoufox — max stealth (Firefox)</option>
+              <option value="chromium">Chromium — compatibility + real phone UI</option>
+              <option value="android">Android — real device (AVD emulator)</option>
             </select>
           </div>
         </div>
@@ -226,11 +223,11 @@
             <label>Device / OS</label>
             <select id="bulk-os">
               <option value="">Random mix (incl. Android)</option>
-              <option value="windows">🪟 Windows</option>
-              <option value="macos">🍎 macOS</option>
-              <option value="linux">🐧 Linux</option>
-              <option value="android">📱 Android phone</option>
-              <option value="ios">🍏 iPhone (iOS)</option>
+              <option value="windows">Windows</option>
+              <option value="macos">macOS</option>
+              <option value="linux">Linux</option>
+              <option value="android">Android phone</option>
+              <option value="ios">iPhone (iOS)</option>
             </select>
           </div>
           <div class="field small">
@@ -241,8 +238,8 @@
         <div class="field">
           <label>Browser engine</label>
           <select id="bulk-engine">
-            <option value="camoufox">🦊 Camoufox — max stealth (Firefox)</option>
-            <option value="chromium">🌐 Chromium — compatibility + real phone UI</option>
+            <option value="camoufox">Camoufox — max stealth (Firefox)</option>
+            <option value="chromium">Chromium — compatibility + real phone UI</option>
           </select>
         </div>
       </div>
@@ -265,7 +262,7 @@
           <label>Phone type</label>
           <div class="seg" id="phone-mode">
             <button type="button" class="seg-btn active" data-mode="emulated">⚡ Emulated <span>instant</span></button>
-            <button type="button" class="seg-btn" data-mode="android">🤖 Real Android <span>AVD</span></button>
+            <button type="button" class="seg-btn" data-mode="android">Real Android <span>AVD</span></button>
           </div>
         </div>
         <p class="field hint" style="margin-top:-4px" id="phone-mode-hint"></p>
