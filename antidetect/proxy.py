@@ -10,13 +10,20 @@ from __future__ import annotations
 import asyncio
 import time
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
 from .models import Proxy
 
-# IP-echo endpoint that also returns geo info.
-_ECHO_URL = "https://ipinfo.io/json"
+# IP-echo endpoints that also return geo info, tried in order. Some proxy
+# providers block or fail on one of them (e.g. "502 Bad Gateway"), so a single
+# bad endpoint shouldn't mark a working proxy as dead.
+_ECHO_URLS = [
+    ("https://ipinfo.io/json", lambda d: (d.get("ip"), d.get("country"), d.get("region"), d.get("city"), d.get("org"))),
+    ("http://ip-api.com/json", lambda d: (d.get("query"), d.get("countryCode"), d.get("regionName"), d.get("city"), d.get("isp"))),
+    ("https://ipwho.is/", lambda d: (d.get("ip"), d.get("country_code"), d.get("region"), d.get("city"), (d.get("connection") or {}).get("isp"))),
+]
 _TIMEOUT = 15.0
 
 
@@ -86,27 +93,35 @@ async def test(proxy: Proxy, timeout: float = _TIMEOUT) -> dict[str, Any]:
 
     # Build an authenticated proxy URL for httpx.
     scheme = "socks5" if proxy.type == "socks5" else "http"
-    auth = f"{proxy.username}:{proxy.password}@" if proxy.username else ""
+    # Percent-encode credentials so passwords with @ : / # don't break the URL.
+    auth = f"{quote(proxy.username, safe='')}:{quote(proxy.password, safe='')}@" if proxy.username else ""
     proxy_url = f"{scheme}://{auth}{proxy.host}:{proxy.port}"
 
-    start = time.perf_counter()
+    errors = []
     try:
         async with httpx.AsyncClient(proxy=proxy_url, timeout=timeout) as client:
-            resp = await client.get(_ECHO_URL)
-            resp.raise_for_status()
-            info = resp.json()
-        latency_ms = round((time.perf_counter() - start) * 1000)
-        return {
-            "ok": True,
-            "ip": info.get("ip"),
-            "country": info.get("country"),
-            "region": info.get("region"),
-            "city": info.get("city"),
-            "org": info.get("org"),
-            "latency_ms": latency_ms,
-        }
+            for url, extract in _ECHO_URLS:
+                start = time.perf_counter()
+                try:
+                    resp = await client.get(url)
+                    resp.raise_for_status()
+                    ip, country, region, city, org = extract(resp.json())
+                except Exception as exc:  # noqa: BLE001 - try the next endpoint
+                    errors.append(f"{type(exc).__name__}: {exc}")
+                    continue
+                return {
+                    "ok": True,
+                    "ip": ip,
+                    "country": country,
+                    "region": region,
+                    "city": city,
+                    "org": org,
+                    "latency_ms": round((time.perf_counter() - start) * 1000),
+                }
     except Exception as exc:  # noqa: BLE001 - report any failure to the UI
-        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        errors.append(f"{type(exc).__name__}: {exc}")
+    # Identical errors from every endpoint (e.g. bad credentials) read as one.
+    return {"ok": False, "error": " | ".join(dict.fromkeys(errors))}
 
 
 # Public, free proxy lists (plain `host:port` per line) by protocol. These are

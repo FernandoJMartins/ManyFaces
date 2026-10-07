@@ -69,13 +69,24 @@ function statusPill(p) {
   return `<span class="pill off"><span class="dot"></span>stopped</span>`;
 }
 
+const ACCOUNT_STATUSES = [
+  ["active", "Active"], ["warming", "Warming"], ["limited", "Limited"], ["banned", "Banned"],
+];
+
+function accountSelect(p) {
+  const cur = p.account_status || "active";
+  return `<select class="acct acct-${cur}" data-acct="${p.id}" title="Account status">${
+    ACCOUNT_STATUSES.map(([v, label]) => `<option value="${v}" ${v === cur ? "selected" : ""}>${label}</option>`).join("")
+  }</select>`;
+}
+
 function renderList(profiles) {
   const body = $("#profiles-body");
   if (!profiles.length) {
     const msg = allProfiles.length
       ? `No profiles match. <a href="#" id="clear-filter">Clear filters</a>`
       : `No profiles yet. Click “+ New Profile” or “📱 New Phone”.`;
-    body.innerHTML = `<tr><td colspan="8" class="empty">${msg}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="9" class="empty">${msg}</td></tr>`;
     const cf = $("#clear-filter");
     if (cf) cf.onclick = (e) => { e.preventDefault(); activeFilter = "all"; $("#search").value = ""; renderStats(); applySearch(); };
     syncBulkBar();
@@ -96,6 +107,7 @@ function renderList(profiles) {
       <td>${proxyCell(p)}</td>
       <td class="hide-sm sub">${esc(fp.language)} · ${esc(fp.timezone)}</td>
       <td class="hide-sm"><button class="sm ghost" data-act="cookies" data-id="${p.id}">Cookies</button></td>
+      <td>${accountSelect(p)}</td>
       <td>${statusPill(p)}</td>
       <td class="actions-cell">
         ${toggle}
@@ -115,6 +127,7 @@ function currentView() {
     const fp = p.fingerprint;
     if (activeFilter === "running" && !p.running) return false;
     if (["android", "chromium", "camoufox"].includes(activeFilter) && p.engine !== activeFilter) return false;
+    if (activeFilter.startsWith("acct:") && (p.account_status || "active") !== activeFilter.slice(5)) return false;
     if (!q) return true;
     return (p.name + " " + fp.os + " " + (fp.device_name || "") + " " + fp.language).toLowerCase().includes(q);
   });
@@ -133,7 +146,8 @@ function renderStats() {
     <div class="stat wide"><div class="stat-engines">${Object.entries(byEngine).map(([e, n]) => `${engineBadge(e)}&nbsp;${n}`).join(" &nbsp; ") || "—"}</div><div class="stat-l">By engine</div></div>`;
   const chips = [["all", "All", total], ["running", "● Running", running],
     ["android", "🤖 Android", byEngine.android || 0], ["chromium", "🌐 Chromium", byEngine.chromium || 0],
-    ["camoufox", "🦊 Camoufox", byEngine.camoufox || 0]];
+    ["camoufox", "🦊 Camoufox", byEngine.camoufox || 0],
+    ...ACCOUNT_STATUSES.map(([v, label]) => [`acct:${v}`, label, allProfiles.filter((p) => (p.account_status || "active") === v).length])];
   $("#filter-chips").innerHTML = chips
     .filter((c) => c[0] === "all" || c[0] === "running" || c[2] > 0)
     .map(([k, label, n]) => `<button class="chip ${activeFilter === k ? "active" : ""}" data-filter="${k}">${label} <span>${n}</span></button>`).join("");
@@ -176,6 +190,23 @@ $("#filter-chips").addEventListener("click", (e) => {
   const b = e.target.closest("[data-filter]"); if (!b) return;
   activeFilter = b.dataset.filter; renderStats(); applySearch();
 });
+$("#profiles-body").addEventListener("change", async (e) => {
+  const sel = e.target.closest("select[data-acct]");
+  if (!sel) return;
+  const id = sel.dataset.acct;
+  const value = sel.value;
+  sel.className = `acct acct-${value}`;
+  try {
+    const updated = await api(`/api/profiles/${id}`, { method: "PATCH", body: JSON.stringify({ account_status: value }) });
+    const i = allProfiles.findIndex((p) => p.id === id);
+    if (i >= 0) allProfiles[i].account_status = updated.account_status;
+    renderStats();
+    toast(`Account marked ${value}`);
+  } catch (err) {
+    toast("Couldn't save status: " + err.message, "err");
+  }
+});
+
 $("#profiles-body").addEventListener("change", (e) => {
   const cb = e.target.closest(".row-check"); if (!cb) return;
   if (cb.checked) selected.add(cb.dataset.id); else selected.delete(cb.dataset.id);
@@ -340,6 +371,8 @@ function fillForm(p) {
   $("#f-pport").value = px.port || "";
   $("#f-puser").value = px.username || "";
   $("#f-ppass").value = px.password || "";
+  $("#f-pline").value = "";
+  $("#pline-hint").textContent = "Paste a full proxy line and the fields below fill in automatically.";
   $("#f-pool").value = (p?.proxy_pool || []).map(proxyToLine).join("\n");
   $("#f-pool-type").value = "http";
   $("#proxy-result").textContent = "";
@@ -417,6 +450,31 @@ $("#modal-close").addEventListener("click", closeEditor);
 $("#modal-cancel").addEventListener("click", closeEditor);
 
 // single-proxy test
+// One-line proxy paste → split into the Manual fields via the server parser.
+async function applyProxyLine() {
+  const text = $("#f-pline").value.trim();
+  const hint = $("#pline-hint");
+  if (!text) { hint.textContent = "Paste a full proxy line and the fields below fill in automatically."; return; }
+  try {
+    const r = await api("/api/proxy/parse", {
+      method: "POST",
+      body: JSON.stringify({ text, default_type: $("#f-ptype").value }),
+    });
+    const p = r.proxies[0];
+    if (!p) { hint.textContent = "Couldn't read that line — use host:port:user:pass or user:pass@host:port."; return; }
+    $("#f-ptype").value = p.type || "http";
+    $("#f-phost").value = p.host || "";
+    $("#f-pport").value = p.port || "";
+    $("#f-puser").value = p.username || "";
+    $("#f-ppass").value = p.password || "";
+    hint.textContent = `Filled: ${p.type.toUpperCase()} ${p.host}:${p.port}${p.username ? " (with login)" : ""}`;
+  } catch (e) {
+    hint.textContent = "Couldn't read that line: " + e.message;
+  }
+}
+$("#f-pline").addEventListener("change", applyProxyLine);
+$("#f-pline").addEventListener("paste", () => setTimeout(applyProxyLine, 0));
+
 $("#test-proxy").addEventListener("click", async () => {
   const px = readForm().proxy;
   const out = $("#proxy-result");

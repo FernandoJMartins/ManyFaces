@@ -18,6 +18,9 @@ ProxyMode = Literal["manual", "random", "rotate"]
 #               a spoof. Requires the one-click Android SDK install (see android.py).
 Engine = Literal["camoufox", "chromium", "android"]
 
+# The account's standing on the sites it's used for, set by hand from the list.
+AccountStatus = Literal["active", "warming", "limited", "banned"]
+
 
 class Proxy(BaseModel):
     type: ProxyType = "http"
@@ -103,6 +106,7 @@ class Profile(BaseModel):
     proxy_mode: ProxyMode = "manual"
     proxy_pool: list[Proxy] = Field(default_factory=list)
     rotation_index: int = 0
+    account_status: AccountStatus = "active"
     fingerprint: FingerprintModel = Field(default_factory=FingerprintModel)
     # Behavioural / hardening toggles handed to Camoufox.
     humanize: bool = True          # human-like cursor movement
@@ -179,6 +183,7 @@ class ProfileUpdate(BaseModel):
     proxy_mode: Optional[ProxyMode] = None
     proxy_pool: Optional[list[Proxy]] = None
     rotation_index: Optional[int] = None
+    account_status: Optional[AccountStatus] = None
     fingerprint: Optional[FingerprintModel] = None
     humanize: Optional[bool] = None
     block_webrtc: Optional[bool] = None

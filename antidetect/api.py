@@ -436,6 +436,7 @@ def clone_profile(profile_id: str) -> dict[str, Any]:
     for key in ("id", "created_at", "updated_at"):
         data.pop(key, None)
     data["name"] = f"{src.name} (copy)"
+    data["account_status"] = "active"  # a clone is a fresh account
     clone = db.create(Profile.model_validate(data))
     return _with_status(clone)
 

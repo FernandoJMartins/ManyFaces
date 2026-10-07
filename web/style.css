@@ -117,6 +117,13 @@ tbody tr.sel:hover { background: rgba(99,102,241,.2) !important; }
 .pill.launching .spin { width: 11px; height: 11px; border: 2px solid rgba(165,180,252,.35); border-top-color: #a5b4fc; border-radius: 50%; animation: spin .7s linear infinite; }
 .pill.err { background: rgba(239,68,68,.14); color: #f87171; cursor: pointer; }
 .pill.err:hover { background: rgba(239,68,68,.24); }
+/* Account status picker in the profile list */
+select.acct { padding: 4px 8px; border-radius: 20px; font-size: 12px; font-weight: 600; border: 1px solid transparent; cursor: pointer; width: auto; }
+select.acct option { background: var(--panel); color: var(--text); }
+select.acct-active  { background: rgba(34,197,94,.13);  color: #4ade80; border-color: rgba(34,197,94,.3); }
+select.acct-warming { background: rgba(234,179,8,.13);  color: #facc15; border-color: rgba(234,179,8,.3); }
+select.acct-limited { background: rgba(249,115,22,.13); color: #fb923c; border-color: rgba(249,115,22,.3); }
+select.acct-banned  { background: rgba(239,68,68,.14);  color: #f87171; border-color: rgba(239,68,68,.3); }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
 @keyframes spin { to { transform: rotate(360deg); } }
 

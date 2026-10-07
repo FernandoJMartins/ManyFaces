@@ -55,11 +55,11 @@
             <th class="col-check"><input type="checkbox" id="head-check" title="Select all" /></th>
             <th>Name</th><th>Device</th><th>Proxy</th>
             <th class="hide-sm">Locale</th><th class="hide-sm">Cookies</th>
-            <th>Status</th><th></th>
+            <th>Account</th><th>Status</th><th></th>
           </tr>
         </thead>
         <tbody id="profiles-body">
-          <tr><td colspan="8" class="empty">Loading…</td></tr>
+          <tr><td colspan="9" class="empty">Loading…</td></tr>
         </tbody>
       </table>
     </div>
@@ -116,6 +116,12 @@
 
           <!-- Manual: single proxy -->
           <div id="proxy-manual">
+            <div class="field">
+              <label>Paste proxy (one line)</label>
+              <input id="f-pline" type="text" spellcheck="false" autocomplete="off"
+                     placeholder="host:port:user:pass  ·  user:pass@host:port  ·  socks5://host:port" />
+              <div class="hint" id="pline-hint">Paste a full proxy line and the fields below fill in automatically.</div>
+            </div>
             <div class="row">
               <div class="field small">
                 <label>Type</label>
