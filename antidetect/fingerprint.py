@@ -38,6 +38,33 @@ _LOCALES = [
     ("pt-BR", "BR", "America/Sao_Paulo"),
 ]
 
+def real_display() -> tuple[int, int, int, int] | None:
+    """(screen_w, screen_h, work_w, work_h) of the primary monitor in CSS pixels.
+
+    The work area is the screen minus the taskbar. Windows only; None elsewhere
+    or on failure. This process isn't DPI-aware, so Windows reports logical
+    (scaled) pixels, which is what the browser exposes to pages.
+    """
+    import sys
+
+    if sys.platform != "win32":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.windll.user32
+        sw, sh = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+        work = wintypes.RECT()
+        user32.SystemParametersInfoW(0x30, 0, ctypes.byref(work), 0)  # SPI_GETWORKAREA
+        ww, wh = work.right - work.left, work.bottom - work.top
+        if sw > 0 and sh > 0 and 0 < ww <= sw and 0 < wh <= sh:
+            return sw, sh, ww, wh
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
 _CORES = [4, 6, 8, 8, 12, 16]
 _DEVICE_PIXEL_RATIOS = [1.0, 1.0, 1.25, 1.5, 2.0]
 _SAMPLE_RATES = [44100, 48000]
@@ -475,7 +502,10 @@ def generate(
         return _generate_android(rng)
     os_name = os_name if os_name in _OS_SHORT else rng.choice(_OS_CHOICES)
 
-    w, h = rng.choice(_SCREENS)
+    # Desktop windows open full-size, so claim the real monitor: a window
+    # larger than the screen the identity reports would be an impossible geometry.
+    disp = real_display()
+    w, h = disp[:2] if disp else rng.choice(_SCREENS)
     cores = rng.choice(_CORES)
     vendor, renderer = _sample_webgl(os_name, rng, w, h, cores)
     lang, region, tz = rng.choice(_LOCALES)

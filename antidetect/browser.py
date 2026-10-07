@@ -17,6 +17,7 @@ import traceback
 from typing import Any, Optional
 
 from . import config, cookies as cookie_store
+from .fingerprint import real_display
 from .models import Profile
 
 
@@ -65,11 +66,15 @@ def mobile_start_url() -> str:
     return page.as_uri() if page.exists() else "about:blank"
 
 
+# Where a desktop profile with no start URL of its own opens.
+DEFAULT_START_URL = "https://www.google.com/"
+
+
 def effective_start_url(profile: Profile, fp) -> str:
     """Resolve the URL a session should open, upgrading a blank phone to the start page."""
     url = normalize_start_url(profile.start_url)
-    if url == "about:blank" and getattr(fp, "is_mobile", False):
-        return mobile_start_url()
+    if url == "about:blank":
+        return mobile_start_url() if getattr(fp, "is_mobile", False) else DEFAULT_START_URL
     return url
 
 
@@ -179,12 +184,18 @@ def _resolve_screen(os_name: str, width: int, height: int):
     Camoufox sync launch leaves an asyncio loop that would poison a retry.
     """
     try:
-        from browserforge.fingerprints import Screen
         from camoufox.fingerprints import generate_fingerprint
     except ImportError:
         return None
+    try:
+        # Current Camoufox ships its own Screen; the BrowserForge one it used to
+        # take now fails (no `as_conditions`), which silently dropped the bound.
+        from camoufox.fingerprints import Screen
+    except ImportError:
+        from browserforge.fingerprints import Screen
 
     bands = [
+        (width, width, height, height),
         (max(1024, width - 160), width + 64, max(720, height - 120), height + 64),
         (1280, 1920, 720, 1200),
         (1024, 2560, 720, 1440),
@@ -309,7 +320,20 @@ def build_launch_options(profile: Profile, headless: bool | None = None) -> dict
             "ui.allPointerCapabilities": 1,
         })
     else:
-        screen = _resolve_screen(fp.os, fp.screen_width, fp.screen_height)
+        # Open full-size: report the real monitor and size the window to its work
+        # area (screen minus taskbar), so the window fills the screen and the
+        # geometry pages measure stays coherent (window <= avail <= screen).
+        disp = real_display()
+        if disp:
+            sw, sh, ww, wh = disp
+            screen = _resolve_screen(fp.os, sw, sh)
+            opts["window"] = (ww, wh)
+            # Pin it to the top-left; the generator otherwise draws a random
+            # position that can leave a full-width window mostly off-screen.
+            cfg["window.screenX"] = 0
+            cfg["window.screenY"] = 0
+        else:
+            screen = _resolve_screen(fp.os, fp.screen_width, fp.screen_height)
         if screen is not None:
             opts["screen"] = screen
     if profile.proxy.is_set:
