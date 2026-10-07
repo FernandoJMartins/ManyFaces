@@ -102,20 +102,20 @@ function renderList(profiles) {
       : `<button class="sm primary" data-act="start" data-id="${p.id}">Launch</button>`;
     return `<tr class="${sel ? "sel" : ""}">
       <td class="col-check"><input type="checkbox" class="row-check" data-id="${p.id}" ${sel ? "checked" : ""} /></td>
-      <td><div class="name">${esc(p.name)}</div><div class="sub">${fp.screen_width}×${fp.screen_height}</div></td>
+      <td><div class="name" title="${esc(p.name)}">${esc(p.name)}</div><div class="sub">${fp.screen_width}×${fp.screen_height}</div></td>
       <td>${deviceCell(fp)}<div class="sub">${engineBadge(p.engine)}</div></td>
       <td>${proxyCell(p)}</td>
       <td class="hide-sm sub">${esc(fp.language)} · ${esc(fp.timezone)}</td>
       <td class="hide-sm"><button class="sm ghost" data-act="cookies" data-id="${p.id}">Cookies</button></td>
       <td>${accountSelect(p)}</td>
       <td>${statusPill(p)}</td>
-      <td class="actions-cell">
+      <td class="actions-cell"><div class="actions">
         ${toggle}
         <button class="sm" data-act="randomize" data-id="${p.id}" title="Regenerate fingerprint + fresh cookie jar">🎲</button>
         <button class="sm" data-act="edit" data-id="${p.id}">Edit</button>
         <button class="sm" data-act="clone" data-id="${p.id}">Clone</button>
         <button class="sm danger" data-act="delete" data-id="${p.id}">Delete</button>
-      </td>
+      </div></td>
     </tr>`;
   }).join("");
   syncBulkBar();
